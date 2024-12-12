@@ -5,16 +5,13 @@ import os
 import glob
 
 
-##########################################################
-def safe_mkdir(path):
-    """ Create a directory if there isn't one already. """
-    try:
-        os.mkdir(path)
-    except OSError:
-        pass
 
-#he_normal_init = tf.contrib.layers.variance_scaling_initializer(factor=2.0, mode='FAN_IN', uniform=False,seed=12345)
-he_normal_init =tf.contrib.layers.xavier_initializer(uniform=False,seed=1234)
+def safe_mkdir(path):
+    """Create a directory if there isn't one already."""
+    os.makedirs(path, exist_ok=True)  # Simplified with os.makedirs
+
+# Using TensorFlow 2.x API for initializers
+he_normal_init = tf.keras.initializers.HeNormal(seed=12345)  # Equivalent to He initialization
 
 
 def Conv2D(inputs, kernel_shape, strides, padding, scope_name='Conv2d',W_initializer=he_normal_init, bias=True,trainable=True):

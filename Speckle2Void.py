@@ -15,10 +15,10 @@ import argparse
 #import os
 import scipy.io as sio
 import tensorflow as tf
-from keras.engine.training_utils import iter_sequence_infinite
+from tensorflow.keras.utils import Sequence
 from DataGenerator import DataGenerator
 from DataWrapper import DataWrapper
-import keras.backend as K
+import tensorflow.keras.backend as K
 
 from utils import Conv2D, Conv3D, safe_mkdir
 
@@ -118,20 +118,27 @@ class Speckle2V(object):
         
         self.gstep = tf.Variable(0, dtype=tf.int32, trainable=False, name='global_step')
         self.placeholder()
-        self.sess = tf.Session()
+        self.sess = tf.compat.v1.Session()
         
         self.loaded_weights = False
         
        
     def placeholder(self):
-        
-        
-        self.X_noisy=tf.placeholder('float32',shape=[None,None,None,self.channels],name='X_noisy')
-        self.mask_holder=tf.placeholder('float32',shape=[None,None,None,self.channels],name='mask')
-        self.shift=tf.placeholder('int32',shape=[],name='shift')
-        
-        self.L_holder = tf.placeholder('float32', shape=[] ,name='L')
-        self.is_train = tf.placeholder(tf.bool, shape=[])
+        self.X_noisy = tf.keras.Input(
+            shape=(None, None, self.channels), dtype='float32', name='X_noisy'
+        )
+        self.mask_holder = tf.keras.Input(
+            shape=(None, None, self.channels), dtype='float32', name='mask'
+        )
+        self.shift = tf.keras.Input(
+            shape=(), dtype='int32', name='shift'
+        )
+        self.L_holder = tf.keras.Input(
+            shape=(), dtype='float32', name='L'
+        )
+        self.is_train = tf.keras.Input(
+            shape=(), dtype='bool', name='is_train'
+        )
         
         
     def get_data(self):
@@ -153,18 +160,30 @@ class Speckle2V(object):
             
             #####TRAINING
             #Compute mask for training images to exclude them in the loss computation
-            indexes = np.where(X_train_noisy > self.clip)
-            self.mask_train = np.ones_like(X_train_noisy,dtype=np.bool)
-            self.mask_train[indexes] = False
+            
+            self.mask_train = X_train_noisy <= self.clip
+            
             
             print('Clipping...')
             #Replace high backscatters with the median
+            # Clip the noisy training data
+            print("Shape of X_train_noisy:", X_train_noisy.shape)
             X_train_noisy = np.clip(X_train_noisy, 0, None)
             self.X_train_noisy_clipped = X_train_noisy
-            medians = np.median(X_train_noisy,axis=[1,2],keepdims=True)
-            self.X_train_noisy_clipped = np.where(self.X_train_noisy_clipped > self.clip,medians, X_train_noisy)
-            
-            
+
+            # Check the number of dimensions
+            if X_train_noisy.ndim == 4:  # Example shape: (batch_size, height, width, channels)
+                medians = np.median(X_train_noisy, axis=(1, 2), keepdims=True)
+            elif X_train_noisy.ndim == 3:  # Example shape: (batch_size, height, width)
+                medians = np.median(X_train_noisy, axis=(1, 2), keepdims=True)
+            elif X_train_noisy.ndim == 2:  # Example shape: (batch_size, features)
+                medians = np.median(X_train_noisy, axis=1, keepdims=True)
+            else:
+                raise ValueError(f"Unexpected number of dimensions: {X_train_noisy.ndim}")
+
+            # Replace values above the clip threshold with the median
+            self.X_train_noisy_clipped = np.where(self.X_train_noisy_clipped > self.clip, medians, X_train_noisy)
+                        
             print('Normalizing...')
             #Normalization
             self.X_train_noisy_clipped = (self.X_train_noisy_clipped.astype(np.float32))

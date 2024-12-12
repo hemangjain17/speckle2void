@@ -1,6 +1,7 @@
 import numpy as np
 from os.path import join,basename
 from glob import glob
+import os 
 import tifffile
 from matplotlib import image
 from csbdeep.utils import _raise
@@ -133,35 +134,74 @@ class DataGenerator():
         return self.load_imgs(files, dims=dims, max_files=max_files)
 
 
-    def generate_patches_from_list(self, data, num_patches_per_img=None, shape=(256, 256), augment=True):
-        """
-        Extracts patches from 'list_data', which is a list of images, and returns them in a 'numpy-array'. The images
-        can have different dimensionality.
+    def generate_patches_from_list( self, dir_path, num_patches_per_img=None, shape=(256, 256), augment=True):
+      """
+      Extracts patches from images in the directory and returns them as a numpy array.
 
-        Parameters
-        ----------
-        data                : list(array(float))
-                              List of images with dimensions 'SZYXC' or 'SYXC'
-        num_patches_per_img : int, optional(default=None)
-                              Number of patches to extract per image. If 'None', as many patches as fit i nto the
-                              dimensions are extracted.
-        shape               : tuple(int), optional(default=(256, 256))
-                              Shape of the extracted patches.
-        augment             : bool, optional(default=True)
-                              Rotate the patches in XY-Plane. This only works if the patches are square in XY.
+      Parameters
+      ----------
+      dir_path            : str
+                            Path to the directory containing .png, .mat, or .tif files.
+      num_patches_per_img : int, optional (default=None)
+                            Number of patches to extract per image. If None, as many as possible are extracted.
+      shape               : tuple(int), optional (default=(256, 256))
+                            Shape of the extracted patches.
+      augment             : bool, optional (default=True)
+                            Rotate the patches in the XY plane if square.
 
-        Returns
-        -------
-        patches : array(float)
-                  Numpy-Array with the patches. The dimensions are 'SZYXC' or 'SYXC'
-        """
-        patches = []
-        for img in data:
-            p = self.generate_patches(img, num_patches=num_patches_per_img, shape=shape, augment=augment)
-            patches.append(p)
+      Returns
+      -------
+      patches : array(float)
+                Numpy array with extracted patches.
+      """
+      # Handle a single directory or a list of directories
+      if isinstance(dir_path, str):  # Single directory
+          dir_list = [dir_path]
+      elif isinstance(dir_path, list):  # List of directories
+          dir_list = dir_path
+      else:
+          raise TypeError("dir_path should be a string or a list of strings representing directory paths.")
 
-        patches = np.concatenate(patches, axis=0)
-        return patches
+      patches = []
+
+      for directory in dir_list:
+          # Validate the directory path
+          if not os.path.isdir(directory):
+              print(f"Invalid directory path: {directory}")
+              continue
+
+          # List all files in the directory
+          valid_extensions = ('.png', '.mat', '.tif', '.tiff')
+          file_list = [
+              os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(valid_extensions)
+          ]
+
+          for file_path in file_list:
+              # Load the file based on its extension
+              if file_path.endswith('.png'):
+                  img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)  # Load as grayscale or color
+                  img = np.expand_dims(img, axis=-1) if len(img.shape) == 2 else img  # Ensure channel dimension
+              
+              elif file_path.endswith('.mat'):
+                  mat_data = scipy.io.loadmat(file_path)
+                  img = mat_data['data'] if 'data' in mat_data else list(mat_data.values())[0]  # Adjust key as needed
+                  img = np.squeeze(img)  # Ensure no redundant dimensions
+              
+              elif file_path.endswith(('.tif', '.tiff')):
+                  img = imread(file_path)
+                  img = np.expand_dims(img, axis=-1) if len(img.shape) == 2 else img  # Ensure channel dimension
+
+              else:
+                  print(f"Unsupported file format: {file_path}")
+                  continue
+
+              # Generate patches from the loaded image
+              p = self.generate_patches(img, num_patches=num_patches_per_img, shape=shape, augment=augment)
+              patches.append(p)
+
+      # Concatenate all patches
+      patches = np.concatenate(patches, axis=0) if patches else np.array([])  # Handle empty case
+      return patches
 
     def generate_patches(self, data, num_patches=None, shape=(256, 256), augment=True):
         """
